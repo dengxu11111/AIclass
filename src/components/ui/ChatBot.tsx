@@ -20,6 +20,7 @@ export default function ChatBot() {
         }
     ]);
     const [inputValue, setInputValue] = useState("");
+    const [isLoading, setIsLoading] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
     // Auto scroll to bottom when messages change
@@ -27,59 +28,56 @@ export default function ChatBot() {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [messages, isOpen]);
 
-    // Keyword-based simulated AI logic
-    const generateBotResponse = (input: string) => {
-        const lowerInput = input.toLowerCase();
-
-        if (lowerInput.includes("钱") || lowerInput.includes("多少") || lowerInput.includes("费用") || lowerInput.includes("价格")) {
-            return "本次全链路实战营的培训费用为 **3980元/人**。\n\n**重磅福利：**报名即赠送1个月真实的 ChatGPT 高级会员账号，免翻墙直接使用，支持 Claude, Gemini, Grok 等多模型！";
-        }
-
-        if (lowerInput.includes("时间") || lowerInput.includes("时候") || lowerInput.includes("几号") || lowerInput.includes("日期")) {
-            return `开课时间安排为：**${courseDetails.dates}**。\n\n培训形式主要是：${courseDetails.format}，并且会提供所有课程的长期回放权限，错过直播也不用担心。`;
-        }
-
-        if (lowerInput.includes("发票") || lowerInput.includes("报销") || lowerInput.includes("开票")) {
-            return "我们支持开具正规发票用于单位报销，可开具的类目包括：\n- 培训费\n- 会议费\n- 资料费\n- 技术咨询费\n在报名时您可以选择自己需要的发票内容类型。";
-        }
-
-        if (lowerInput.includes("证明") || lowerInput.includes("证书")) {
-            return `${courseDetails.certificate}。此证书可作为个人学习和知识更新、单位在职人员专业技能素质培养的重要参考依据，支持网上查验。`;
-        }
-
-        if (lowerInput.includes("大纲") || lowerInput.includes("课程") || lowerInput.includes("学什么") || lowerInput.includes("内容")) {
-            return "培训共包含11个核心章节，从基础的提示词撰写到高级的本地Agent构建。\n重点涉及：\n1. LLM结合Excel智能分析\n2. AI生成Python自动化脚本\n3. Zotero与NotebookLM文献推理管理\n4. 本地Ollama架构部署与多模型协作\n5. AI自动化生成科研插图及视频。\n您可以点击导航栏的“课程大纲”查看所有详细的目录~";
-        }
-
-        if (lowerInput.includes("报名") || lowerInput.includes("怎么报") || lowerInput.includes("参加")) {
-            return "您可以点击页面顶部的**“立即报名”**按钮，或者直接导航到【报名与注册】页面。在那里您可以通过企业微信或支付宝直接扫码支付，或者获取对公转账的银行账号。支付后请联系会务负责人（贾莲，微信：193-3122-6341）确认细节。";
-        }
-
-        if (lowerInput.includes("联系") || lowerInput.includes("微信") || lowerInput.includes("电话") || lowerInput.includes("人工")) {
-            return "如需人工服务或联系会务组，请联系：\n**负责人**：贾莲\n**电话/微信**：193-3122-6341\n**客服QQ**：1632314244";
-        }
-
-        if (lowerInput.includes("你好") || lowerInput.includes("hello") || lowerInput.includes("hi") || lowerInput.includes("在吗")) {
-            return "您好！很高兴为您服务。关于本次科研大模型实战训练营，您想了解哪方面的信息呢？无论是时间安排、课程内容还是发票费用，我都可以为您解答。";
-        }
-
-        return "抱歉，您提到的问题我可能无法完美解答。不过您可以将这个问题直接反馈给我们的专属客服贾莲（微信同号：193-3122-6341），或者在【关于我们】页面寻找更多介绍。";
-    };
-
-    const handleSendMessage = (e: React.FormEvent) => {
+    const handleSendMessage = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!inputValue.trim()) return;
+        if (!inputValue.trim() || isLoading) return;
 
-        const userMsg: Message = { id: Date.now().toString(), sender: "user", text: inputValue };
+        const userMessage = inputValue.trim();
+        const userMsg: Message = { id: Date.now().toString(), sender: "user", text: userMessage };
+
         setMessages((prev) => [...prev, userMsg]);
         setInputValue("");
+        setIsLoading(true);
 
-        // Simulate AI thinking delay
-        setTimeout(() => {
-            const responseText = generateBotResponse(userMsg.text);
-            const botMsg: Message = { id: (Date.now() + 1).toString(), sender: "bot", text: responseText };
+        try {
+            // Prepare messages for the API (OpenAI format)
+            const apiMessages = messages
+                .filter(m => m.id !== "1") // Skip initial welcome message from history if needed, or keep it
+                .map(m => ({
+                    role: m.sender === "user" ? "user" : "assistant",
+                    content: m.text
+                }));
+
+            apiMessages.push({ role: "user", content: userMessage });
+
+            const response = await fetch("/api/chat", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ messages: apiMessages }),
+            });
+
+            if (!response.ok) {
+                throw new Error("Failed to get response");
+            }
+
+            const data = await response.json();
+            const botMsg: Message = {
+                id: (Date.now() + 1).toString(),
+                sender: "bot",
+                text: data.content || "抱歉，我现在无法回答，请稍后再试。"
+            };
             setMessages((prev) => [...prev, botMsg]);
-        }, 600);
+        } catch (error) {
+            console.error("Chat Error:", error);
+            const errorMsg: Message = {
+                id: (Date.now() + 1).toString(),
+                sender: "bot",
+                text: "抱歉，连接AI助手时出现了一些问题。建议您联系人工客服贾莲（微信：193-3122-6341）获得更准确的帮助。"
+            };
+            setMessages((prev) => [...prev, errorMsg]);
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     return (
@@ -146,6 +144,15 @@ export default function ChatBot() {
                                     </div>
                                 </div>
                             ))}
+                            {isLoading && (
+                                <div className="flex justify-start">
+                                    <div className="bg-white text-gray-800 border border-gray-100 rounded-2xl rounded-tl-sm p-3 shadow-sm flex items-center gap-1.5">
+                                        <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }}></span>
+                                        <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }}></span>
+                                        <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }}></span>
+                                    </div>
+                                </div>
+                            )}
                             <div ref={messagesEndRef} />
                         </div>
 
